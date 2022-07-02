@@ -1,0 +1,80 @@
+---
+- name: "Update Apt Packages"
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: "Upgrade Packages"
+  become: yes
+  apt:
+    upgrade: yes
+
+- name: "Remove dependencies that are no longer required"
+  become: yes
+  apt:
+    autoremove: yes
+
+# - name: install nodejs prerequisites
+#   become: yes
+#   apt:
+#     name:
+#       - apt-transport-https
+#       - gcc
+#       - g++
+#       - make
+#     state: present
+# - name: "Install the gpg key for nodejs LTS"
+#   become: yes
+#   apt_key:
+#     url: "https://deb.nodesource.com/gpgkey/nodesource.gpg.key"
+#     state: present
+- name: Install dependencies, such as NodeJS and NPM
+  become: true
+  apt:
+    name: ["nodejs", "npm"]
+    state: latest
+    update_cache: yes
+  # shell: |
+  #   sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+  #   sudo apt-get update -y
+  #   sudo apt-get install gcc-4.9 -y
+  #   sudo apt-get upgrade libstdc++6 -y
+  #   curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+  #   sudo apt-get install -y nodejs
+
+# - name: Install the nodejs LTS repos
+#   become: yes
+#   apt_repository:
+#     repo: "deb https://deb.nodesource.com/node_12.x {{ ansible_lsb.codename }} main"
+#     state: present
+#     update_cache: yes
+
+# - name: Install nodejs & npm
+#   become: yes
+#   apt:
+#     name: nodejs
+#     state: present
+
+- name: "Install PM2"
+  become: yes
+  npm:
+    name: pm2
+    global: yes
+    production: yes
+    state: present
+
+- name: "Create a ~/web directory"
+  file:
+    path: ~/web
+    state: directory
+
+- name: "Copy index test page from files/index.js to ~/web/index.js"
+  template:
+    src: "files/index.js"
+    dest: "~/web/index.js"
+
+- name: "Start the web server using the command pm2 start ~/web/index.js -f"
+  shell: |
+    pm2 start ~/web/index.js -f
+
+# ansible-playbook main-remote.yml -i inventory.txt --private-key ../../../udacity-cicd.cer
