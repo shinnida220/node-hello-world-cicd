@@ -76,7 +76,7 @@ jobs:
           name: Execute bucket.yml - Create Cloudformation Stack
           command: |
             aws cloudformation deploy \
-            --template-file bucket.yml
+            --template-file bucket.yml \
             --stack-name stack-create-bucket-${CIRCLE_WORKFLOW_ID:0:7} \
             --parameter-overrides MyBucketName="ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7}" \
             --region us-east-1
