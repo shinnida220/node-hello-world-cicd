@@ -3,6 +3,20 @@
 version: 2.1
 
 commands:
+  sample_smoke_test:
+    steps:
+      - run: apk add --update curl
+      - run:
+          name: Sample smoke test
+          command: |
+            URL="https://blog.udacity.com/"
+            if curl -s --head ${URL}
+            then
+              return 0
+            else
+              return 1
+            fi
+
   destroy_infrastrcuture:
     steps:
       - run:
@@ -46,30 +60,99 @@ jobs:
     docker:
       - image: amazon/aws-cli #alpine:latest
     steps:
-      # - run: apk add --update curl
-      # - run:
-      #     name: Smoke Test
-      #     command: |
-      #       # URL="https://blog.udacity.com/"
-      #       # #Test if website exists
-      #       # if curl -s --head ${URL}
-      #       # then
-      #       #   return 0
-      #       # else
-      #       #   return 1
-      #       # fi
       - run:
           name: Simulate error
           command: |
             return 1 #simmulate returning a non zero (0) exit code so the job will fail
       - destroy_infrastrcuture
 
+  # Create new S3 BUCKET
+  create_and_deploy_front_end:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Execute bucket.yml - Create Cloudformation Stack
+          command: |
+            aws cloudformation deploy \
+            --template-file bucket.yml
+            --stack-name stack-create-bucket-${CIRCLE_WORKFLOW_ID:0:7} \
+            --parameter-overrides MyBucketName="ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7}" \
+            --region us-east-1
+      # upload index file of the current directory to the S3 bucket
+      - run: aws s3 sync /index.html s3://ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7} --delete
+
+  # Job to fetch and save the pipeline ID (bucket ID) responsible for the last release.
+  # In this job, we are saving the bucket ID to a file and persist the file to the workspace for other jobs to access.
+  get_last_deployment_id:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar gzip
+      - run:
+          name: Fetch and Save the old pipeline ID (bucket name) responsible for the last release.
+          command: |
+            aws cloudformation \
+            list-exports --query "Exports[?Name==\`PipelineID\`].Value" \
+            --no-paginate --output text > ~/textfile.txt
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - textfile.txt
+
+  # Write a job named promote_to_production that executes our cloudfront.yml CloudFormation template used in the manual steps
+  # Notice here we use the stack name `production-distro` which is the same name we used while deploying to the S3 bucket manually.
+  promote_to_production:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Execute cloudfront.yml
+          command: |
+            aws cloudformation deploy \
+              --template-file cloudfront.yml \
+              --stack-name production-distro \
+              --parameter-overrides PipelineID="ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7}" \
+              --region us-east-1
+
+  # This job uses the pipeline ID to destroy the previous production version's S3 bucket
+  # and CloudFormation stack.
+  # To achieve this, you need to retrieve from the workspace the file where the previous Pipeline ID was stored.
+  # Destroy the previous production version's S3 bucket and CloudFormation stack.
+  clean_up_old_front_end:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar gzip
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: Destroy the previous S3 bucket and CloudFormation stack.
+          # Use $OldBucketID environment variable or mybucket644752792305 below.
+          # Similarly, you can create and use $OldStackID environment variable in place of production-distro
+          command: |
+            export OldBucketID=$(cat ~/textfile.txt)
+            aws s3 rm "s3://${OldBucketID}" --recursive
+            aws cloudformation delete-stack --stack-name production-distro --region us-east-1
 # Invoke jobs via workflows
 workflows:
   my-workflow:
     jobs:
-      - create_infrastructure
-      # - configure_infrastructure
-      - smoke_test:
+      # - create_infrastructure
+      # # - configure_infrastructure
+      # - smoke_test:
+      #     requires:
+      #       - create_infrastructure
+      - create_and_deploy_front_end
+      - promote_to_production:
           requires:
-            - create_infrastructure
+            - create_and_deploy_front_end
+      - get_last_deployment_id
+      - clean_up_old_front_end:
+          requires:
+            - get_last_deployment_id
+            - promote_to_production
