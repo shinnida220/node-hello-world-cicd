@@ -81,7 +81,7 @@ jobs:
             --parameter-overrides MyBucketName="ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7}" \
             --region us-east-1
       # upload index file of the current directory to the S3 bucket
-      - run: aws s3 sync ~/index.html s3://ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7} --delete
+      - run: aws s3 cp index.html s3://ei-udacitybucket-${CIRCLE_WORKFLOW_ID:0:7}
 
   # Job to fetch and save the pipeline ID (bucket ID) responsible for the last release.
   # In this job, we are saving the bucket ID to a file and persist the file to the workspace for other jobs to access.
